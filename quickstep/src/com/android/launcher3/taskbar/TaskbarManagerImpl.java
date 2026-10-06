@@ -47,6 +47,7 @@ import static com.android.launcher3.util.SimpleBroadcastReceiver.actionsFilter;
 import static com.android.quickstep.util.SystemActionConstants.ACTION_SHOW_TASKBAR;
 import static com.android.quickstep.util.SystemActionConstants.SYSTEM_ACTION_ID_TASKBAR;
 import static com.android.systemui.shared.system.QuickStepContract.SYSUI_STATE_NAVIGATION_BAR_DISABLED;
+import static com.android.wm.shell.Flags.enableTaskbarOnPhones;
 import static com.android.wm.shell.shared.desktopmode.DesktopModeStatus.enableMultipleDesktops;
 
 import android.animation.AnimatorSet;
@@ -986,7 +987,19 @@ public class TaskbarManagerImpl implements DisplayDecorationListener {
         if (taskbarDisallowedByDisplayPolicy) {
             debugTaskbarManager("No taskbar due to SYSUI_STATE_NAVIGATION_BAR_DISABLED", displayId);
         }
-        return !taskbarDisallowedByDisplayPolicy;
+        // Mirror SystemUI's NavigationBarControllerImpl.supportsTaskbar(): on a phone the taskbar
+        // is only enabled when enableTaskbarOnPhones() is set. Google wires that flag into SystemUI
+        // only, so with it off SystemUI hosts its own NavigationBar while TaskbarManager would still
+        // add a second TYPE_NAVIGATION_BAR window -> BadTokenException crash-loop (pepito, sw436dp,
+        // where the taskbar-hosted 3-button bar also mis-insets). Honor the same flag here. Tablets
+        // and large-screen/foldable states (isPhone()==false) are unaffected.
+        boolean taskbarDisallowedOnPhone = deviceProfile != null
+                && deviceProfile.getDeviceProperties().isPhone()
+                && !enableTaskbarOnPhones();
+        if (taskbarDisallowedOnPhone) {
+            debugTaskbarManager("No taskbar: phone && !enableTaskbarOnPhones()", displayId);
+        }
+        return !taskbarDisallowedByDisplayPolicy && !taskbarDisallowedOnPhone;
     }
 
     public void onRotationProposal(int rotation, boolean isValid) {
